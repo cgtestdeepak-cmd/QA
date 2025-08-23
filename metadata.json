@@ -1,0 +1,5 @@
+{
+  "name": "QA Assistant: Test Case Generator",
+  "description": "An application for manual testers to automatically generate functional test cases by providing a Product Requirements Document (PRD) and a Figma design link. It supports text/PDF input, generates positive, negative, and edge cases, and allows for editing and exporting results.",
+  "requestFramePermissions": []
+}

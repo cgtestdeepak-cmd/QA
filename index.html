@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QA Assistant: Test Case Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'main-bg-light': '#257BBE',
+              'main-bg-dark': '#257BBE',
+              'bkg-light': '#F7F9FC',
+              'bkg-dark': '#0D1117',
+              'content-light': '#FFFFFF',
+              'content-dark': '#161B22',
+              
+              'primary-start': '#4F46E5',
+              'primary-end': '#7C3AED',
+              
+              'secondary': '#10B981',
+              'danger': '#E11D48',
+
+              'text-light-primary': '#0D1117',
+              'text-light-secondary': '#57606a',
+              'text-dark-primary': '#E6EDF3',
+              'text-dark-secondary': '#8B949E',
+
+              'border-light': '#D0D7DE',
+              'border-dark': '#30363D',
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.1.1/",
+    "react": "https://esm.sh/react@^19.1.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.13.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-main-bg-light dark:bg-main-bg-dark transition-colors duration-300">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
