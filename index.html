@@ -1,54 +1,72 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="font-sans">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QA Assistant: Test Case Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
             colors: {
-              'main-bg-light': '#257BBE',
-              'main-bg-dark': '#257BBE',
-              'bkg-light': '#F7F9FC',
-              'bkg-dark': '#0D1117',
+              // Light theme
+              'bkg-light': '#F8F9FA',
               'content-light': '#FFFFFF',
+              'text-light-primary': '#212529',
+              'text-light-secondary': '#6C757D',
+              'border-light': '#DEE2E6',
+              
+              // Dark theme
+              'bkg-dark': '#0D1117',
               'content-dark': '#161B22',
-              
-              'primary-start': '#4F46E5',
-              'primary-end': '#7C3AED',
-              
-              'secondary': '#10B981',
-              'danger': '#E11D48',
-
-              'text-light-primary': '#0D1117',
-              'text-light-secondary': '#57606a',
               'text-dark-primary': '#E6EDF3',
               'text-dark-secondary': '#8B949E',
-
-              'border-light': '#D0D7DE',
               'border-dark': '#30363D',
+              
+              // Brand colors
+              'primary': {
+                DEFAULT: '#4F46E5',
+                light: '#6366F1',
+                dark: '#4338CA',
+              },
+              'secondary': '#10B981',
+              'danger': '#E11D48',
+              'success': '#16A34A',
             }
           }
         }
       }
     </script>
+  <script>
+    // Polyfill process.env to prevent crashes in a browser-only environment.
+    // The hosting platform (e.g., Netlify) is responsible for injecting the
+    // actual API_KEY into this object.
+    if (typeof window.process === 'undefined') {
+      window.process = { env: {} };
+    }
+  </script>
   <script type="importmap">
 {
   "imports": {
     "react/": "https://esm.sh/react@^19.1.1/",
     "react": "https://esm.sh/react@^19.1.1",
     "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.13.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.13.0",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5"
   }
 }
 </script>
 </head>
-  <body class="bg-main-bg-light dark:bg-main-bg-dark transition-colors duration-300">
+  <body class="bg-bkg-light dark:bg-bkg-dark transition-colors duration-300">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

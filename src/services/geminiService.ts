@@ -4,7 +4,6 @@ import { TestCase } from '../types';
 let aiInstance: GoogleGenAI | null = null;
 
 // Lazily initialize the AI instance to handle the API key check gracefully.
-// This prevents a top-level error and allows us to show a friendly message in the UI.
 function getAiInstance() {
     if (aiInstance) {
         return aiInstance;
@@ -20,10 +19,7 @@ function getAiInstance() {
     return aiInstance;
 }
 
-
-const testCaseSchema = {
-  type: Type.OBJECT,
-  properties: {
+const testCaseProperties = {
     testCaseId: { type: Type.STRING, description: "A unique identifier in the format TC_XXX, e.g., TC_001." },
     testScenario: { type: Type.STRING, description: "High-level description of what is being tested." },
     preConditions: { type: Type.STRING, description: "What must be true before the test can be executed. Can be 'N/A'." },
@@ -34,12 +30,15 @@ const testCaseSchema = {
     type: { type: Type.STRING, enum: ['Positive', 'Negative', 'Edge'], description: "Type of test case." },
     domain: { type: Type.STRING, enum: ['Functional', 'UI/UX'], description: "The domain of the test case." },
     suiteType: { type: Type.STRING, enum: ['Smoke', 'Sanity', 'Regression'], description: "The test suite this case belongs to." },
-  },
 };
 
 const responseSchema = {
-  type: Type.ARRAY,
-  items: testCaseSchema,
+    type: Type.ARRAY,
+    items: {
+        type: Type.OBJECT,
+        properties: testCaseProperties,
+        required: Object.keys(testCaseProperties),
+    }
 };
 
 const fileToGenerativePart = async (file: File) => {
@@ -53,37 +52,25 @@ const fileToGenerativePart = async (file: File) => {
   };
 };
 
-const createPrompt = (prdText: string, figmaLink: string, imageCount: number, focusPrompt: string): string => {
+const createPrompt = (prdText: string, figmaLink: string, imageProvided: boolean): string => {
   const prdSection = prdText 
-    ? `**1. Product Requirements Document (PRD) Content:**
----
-${prdText}
----` 
+    ? `**1. Product Requirements Document (PRD) Content:**\n\`\`\`\n${prdText}\n\`\`\`` 
     : "**1. Product Requirements Document (PRD) Content:**\nNot provided.";
 
   const figmaSection = figmaLink 
     ? `**2. Figma Design Link (for UI/UX reference):**\n${figmaLink}` 
     : "**2. Figma Design Link (for UI/UX reference):**\nNot provided.";
 
-  const imageSection = imageCount > 0
-    ? `**3. Uploaded Images (${imageCount}) (for UI/UX and functional reference):**
-Images have been provided. Analyze them in conjunction with other provided materials to understand the UI, layout, and functionality.`
-    : "**3. Uploaded Images (for UI/UX and functional reference):**\nNot provided.";
-  
-  const focusSection = focusPrompt
-    ? `**Primary Focus for this Generation:**
----
-${focusPrompt}
----
-` : "";
-  
+  const imageSection = imageProvided
+    ? `**3. Uploaded Image (for UI/UX and functional reference):**
+An image has been provided. Analyze it in conjunction with other provided materials to understand the UI, layout, and functionality.`
+    : "**3. Uploaded Image (for UI/UX and functional reference):**\nNot provided.";
+
   return `
 You are an exceptionally meticulous and detail-oriented Senior QA Engineer. Your primary directive is to create the most exhaustive and comprehensive test suite possible from the provided materials.
 
 **Your Mission:**
 Scrutinize every line, word, and detail of the provided inputs to identify every possible test scenario. Your goal is to maximize the number of high-quality, relevant test cases to ensure zero defects escape to production.
-
-${focusSection}
 
 **Analyze the following inputs with extreme care. Generate test cases based on the information that has been provided:**
 
@@ -108,7 +95,7 @@ ${imageSection}
     *   **Sanity:** Tests that focus on a specific, recently changed, or new area of functionality to ensure it works as expected.
     *   **Regression:** Comprehensive tests covering existing features to ensure they were not broken by new changes. Most test cases will fall into this category.
 6.  **Be Specific:** For each test case, you must provide all the fields defined in the schema, including 'domain' and 'suiteType'. 'Test Steps' must be a clear, precise, and easy-to-follow sequence of actions, separated by newlines. 'Expected Result' must be unambiguous.
-7.  **Ensure Uniqueness:** The 'Test Case ID' for each case must be a simple, unique identifier following the format 'TC_XXX', starting from 'TC_001' and incrementing for each subsequent test case (e.g., TC_001, TC_002, TC_003). Do not include extra information like domain or type in the ID.
+7.  **Ensure Uniqueness:** The 'testCaseId' for each case must be a simple, unique identifier following the format 'TC_XXX', starting from 'TC_001' and incrementing for each subsequent test case (e.g., TC_001, TC_002, TC_003).
 
 **Crucial Formatting Rule:** When generating string values for any JSON field, you MUST properly escape all double quotes (") with a backslash (e.g., "The user sees a message saying \\"Success!\\"."). This is absolutely critical for the output to be valid JSON.
 
@@ -124,81 +111,67 @@ Return the output as a JSON array of objects, strictly conforming to the provide
  */
 function robustJsonParse(jsonString: string): TestCase[] {
   let text = jsonString.trim();
-
-  // Remove markdown code block fences
+  // Remove markdown code block fences if they exist.
   if (text.startsWith("```json")) {
-    text = text.slice(7, text.endsWith("```") ? -3 : undefined).trim();
+    text = text.slice(7);
+    if (text.endsWith("```")) {
+      text = text.slice(0, -3);
+    }
   } else if (text.startsWith("```")) {
-    text = text.slice(3, text.endsWith("```") ? -3 : undefined).trim();
+    text = text.slice(3);
+    if (text.endsWith("```")) {
+        text = text.slice(0, -3);
+    }
   }
-
+  
   try {
+    // First, try a direct parse.
     return JSON.parse(text) as TestCase[];
-  } catch (e) {
-    console.warn("Initial JSON parse failed, attempting repair.", e);
-  }
+  } catch (initialError) {
+    console.warn("Initial JSON parsing failed. Attempting to repair...", initialError);
+    // Attempt to fix a truncated JSON array.
+    // This is a common issue when the model's output exceeds the max token limit.
+    const lastComma = text.lastIndexOf(',');
+    const lastBrace = text.lastIndexOf('}');
+    
+    if (lastBrace > lastComma) {
+      // The string likely ends with a complete object, but the array is not closed.
+      text = text.substring(0, lastBrace + 1) + ']';
+    } else {
+      // The string likely ends mid-object, after a comma.
+      text = text.substring(0, lastComma) + ']';
+    }
 
-  // Find the start of the array. If it doesn't exist, we can't proceed.
-  const startIndex = text.indexOf('[');
-  if (startIndex === -1) {
-    throw new Error("The AI returned a response that does not appear to be a JSON array.");
-  }
-  
-  // Find the end of the last potential object.
-  const lastBraceIndex = text.lastIndexOf('}');
-
-  // If there are no objects, we might have an empty or truncated empty array.
-  if (lastBraceIndex < startIndex) {
-    return []; // Assume empty array for cases like `[` or `[]`.
-  }
-
-  // Slice from the start of the array to the end of the last found object.
-  let potentialJson = text.substring(startIndex, lastBraceIndex + 1);
-
-  // Close the array.
-  potentialJson += ']';
-  
-  try {
-    const parsed = JSON.parse(potentialJson);
-    console.log("Successfully repaired and parsed truncated JSON.");
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch (repairError) {
-    // One last try: what if the model returned something like `[{"a":1}], junk`.
-    // The previous attempt would be `[{"a":1}]]` which fails.
-    // Let's try parsing just up to the last valid brace.
-    const finalAttemptStr = text.substring(startIndex, lastBraceIndex + 1);
     try {
-        const parsed = JSON.parse(finalAttemptStr);
-        console.log("Successfully repaired by slicing until last brace.");
-        return Array.isArray(parsed) ? parsed : [parsed];
-    } catch (finalError) {
-        console.error("Failed to repair JSON after multiple attempts. Raw response:", jsonString, "Last attempt:", potentialJson);
-        throw new Error("The AI returned a malformed response that could not be parsed. Please try simplifying your request or regenerating.");
+      const parsedJson = JSON.parse(text);
+      console.log("Successfully repaired and parsed truncated JSON.");
+      return parsedJson as TestCase[];
+    } catch (repairError) {
+      console.error("Failed to repair JSON. Raw response:", jsonString);
+      throw new Error("The AI returned a malformed response that could not be parsed. Please check the console for the raw output and try simplifying your request.");
     }
   }
 }
 
-export const generateTestCases = async (prdText: string, figmaLink: string, imageFiles: File[], focusPrompt: string): Promise<TestCase[]> => {
-  const ai = getAiInstance(); // This will throw an error if the API key is not set.
+export const generateTestCases = async (prdText: string, figmaLink: string, imageFile: File | null): Promise<TestCase[]> => {
+  const ai = getAiInstance();
 
-  if (!prdText.trim() && !figmaLink.trim() && imageFiles.length === 0) {
+  if (!prdText.trim() && !figmaLink.trim() && !imageFile) {
     throw new Error("Please provide at least one input: PRD text, a Figma link, or an image.");
   }
-
-  const prompt = createPrompt(prdText, figmaLink, imageFiles.length, focusPrompt);
+  
+  const prompt = createPrompt(prdText, figmaLink, !!imageFile);
   
   const parts: ({ text: string } | { inlineData: { data: string; mimeType: string; } })[] = [
-    { text: prompt }
+    { text: prompt },
   ];
 
-  if (imageFiles.length > 0) {
-    for (const imageFile of imageFiles) {
-        if (imageFile.size > 4 * 1024 * 1024) { // 4MB limit for inline data
-            throw new Error(`Image file "${imageFile.name}" size exceeds the 4MB limit. Please upload a smaller image.`);
-        }
-        const imagePart = await fileToGenerativePart(imageFile);
-        parts.push(imagePart);
+  if (imageFile) {
+    if (imageFile.size > 4 * 1024 * 1024) { // 4MB limit for inline data
+        throw new Error("Image file size exceeds the 4MB limit. Please upload a smaller image.");
     }
+    const imagePart = await fileToGenerativePart(imageFile);
+    parts.push(imagePart);
   }
 
   let responseText = '';
@@ -212,31 +185,30 @@ export const generateTestCases = async (prdText: string, figmaLink: string, imag
         temperature: 0.2,
       },
     });
-
+    
     responseText = response.text;
+
     if (!responseText) {
         throw new Error("Received an empty response from the AI. The model may have refused to answer.");
     }
-    
+
     const parsedJson = robustJsonParse(responseText);
 
     // Ensure the output is an array.
     if (!Array.isArray(parsedJson)) {
-        console.error("Parsed response was not an array:", parsedJson);
-        throw new Error("The AI response was not in the expected format (a list of test cases).");
+        throw new Error("The AI response was not a valid JSON array.");
     }
-    
+
     return parsedJson as TestCase[];
 
   } catch (error) {
-    console.error("Error generating test cases:", error);
+    console.error("Error in generateTestCases:", error);
     if (error instanceof Error) {
         if (error.message.includes("API key not valid")) {
             throw new Error("The configured API key is invalid. Please check your environment variables.");
         }
-        // Re-throw other errors to be caught by the UI, which will show the message.
-        throw error; 
+        throw error; // Re-throw other errors to be caught by the UI
     }
-    throw new Error("An unknown error occurred while generating test cases. Please check the console for details.");
+    throw new Error("An unknown error occurred during test case generation.");
   }
 };

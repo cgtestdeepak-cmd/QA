@@ -1,5 +1,7 @@
+
 import React, { useState } from 'react';
 import { User } from '../types';
+import { EyeIcon, EyeOffIcon } from './icons';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -12,6 +14,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +67,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     >
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary-start to-primary-end bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-primary to-primary-light bg-clip-text text-transparent">
               QA Assistant
             </h1>
             <p className="mt-2 text-text-light-secondary dark:text-text-dark-secondary">
@@ -72,7 +75,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             </p>
         </div>
         
-        <div className="bg-content-light dark:bg-content-dark p-8 rounded-xl shadow-lg border border-border-light dark:border-border-dark">
+        <div className="bg-content-light/80 dark:bg-content-dark/80 backdrop-blur-sm p-8 rounded-2xl shadow-2xl border border-border-light dark:border-border-dark">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
@@ -87,7 +90,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-2 bg-bkg-light dark:bg-bkg-dark border border-border-light dark:border-border-dark rounded-md focus:ring-2 focus:ring-primary-start focus:outline-none text-text-light-primary dark:text-text-dark-primary placeholder-text-light-secondary dark:placeholder-text-dark-secondary"
+                  className="w-full px-4 py-2 bg-bkg-light dark:bg-bkg-dark border border-border-light dark:border-border-dark rounded-md focus:ring-2 focus:ring-primary focus:outline-none text-text-light-primary dark:text-text-dark-primary placeholder-text-light-secondary dark:placeholder-text-dark-secondary"
                 />
               </div>
             </div>
@@ -96,17 +99,25 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               <label htmlFor="password"  className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
                 Password
               </label>
-              <div className="mt-1">
+              <div className="mt-1 relative">
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={isPasswordVisible ? 'text' : 'password'}
                   autoComplete={isLogin ? "current-password" : "new-password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2 bg-bkg-light dark:bg-bkg-dark border border-border-light dark:border-border-dark rounded-md focus:ring-2 focus:ring-primary-start focus:outline-none text-text-light-primary dark:text-text-dark-primary placeholder-text-light-secondary dark:placeholder-text-dark-secondary"
+                  className="w-full px-4 py-2 pr-10 bg-bkg-light dark:bg-bkg-dark border border-border-light dark:border-border-dark rounded-md focus:ring-2 focus:ring-primary focus:outline-none text-text-light-primary dark:text-text-dark-primary placeholder-text-light-secondary dark:placeholder-text-dark-secondary"
                 />
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordVisible(!isPasswordVisible)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-text-light-secondary dark:text-text-dark-secondary"
+                  aria-label={isPasswordVisible ? 'Hide password' : 'Show password'}
+                >
+                  {isPasswordVisible ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                </button>
               </div>
             </div>
             
@@ -115,7 +126,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <div>
               <button
                 type="submit"
-                className="w-full flex justify-center py-3 px-4 bg-gradient-to-r from-primary-start to-primary-end text-white font-semibold rounded-lg shadow-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-start transition-all duration-300 transform hover:scale-105"
+                className="w-full flex justify-center py-3 px-4 bg-gradient-to-r from-primary to-primary-light text-white font-semibold rounded-lg shadow-md hover:shadow-lg hover:shadow-primary/40 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all duration-300 transform hover:scale-105"
               >
                 {isLogin ? 'Log In' : 'Sign Up'}
               </button>
@@ -125,7 +136,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           <div className="mt-6 text-center">
             <p className="text-sm text-text-light-secondary dark:text-text-dark-secondary">
               {isLogin ? "Don't have an account?" : 'Already have an account?'}
-              <button onClick={() => { setIsLogin(!isLogin); setError(''); }} className="font-medium text-primary-start hover:text-primary-end ml-1">
+              <button onClick={() => { setIsLogin(!isLogin); setError(''); }} className="font-medium text-primary hover:text-primary-dark ml-1">
                 {isLogin ? 'Sign up' : 'Log in'}
               </button>
             </p>
