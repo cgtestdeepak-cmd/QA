@@ -21,25 +21,26 @@ function getAiInstance() {
 }
 
 
-const testCaseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    testCaseId: { type: Type.STRING, description: "A unique identifier in the format TC_XXX, e.g., TC_001." },
-    testScenario: { type: Type.STRING, description: "High-level description of what is being tested." },
-    preConditions: { type: Type.STRING, description: "What must be true before the test can be executed. Can be 'N/A'." },
-    testSteps: { type: Type.STRING, description: "A newline-separated list of actions to perform." },
-    testData: { type: Type.STRING, description: "Specific data values to use for the test. Can be 'N/A'." },
-    expectedResult: { type: Type.STRING, description: "The expected outcome after executing the test steps." },
-    priority: { type: Type.STRING, enum: ['High', 'Medium', 'Low'], description: "Priority of the test case." },
-    type: { type: Type.STRING, enum: ['Positive', 'Negative', 'Edge'], description: "Type of test case." },
-    domain: { type: Type.STRING, enum: ['Functional', 'UI/UX'], description: "The domain of the test case." },
-    suiteType: { type: Type.STRING, enum: ['Smoke', 'Sanity', 'Regression'], description: "The test suite this case belongs to." },
-  },
+const testCaseProperties = {
+  testCaseId: { type: Type.STRING, description: "A unique identifier in the format TC_XXX, e.g., TC_001." },
+  testScenario: { type: Type.STRING, description: "High-level description of what is being tested." },
+  preConditions: { type: Type.STRING, description: "What must be true before the test can be executed. Can be 'N/A'." },
+  testSteps: { type: Type.STRING, description: "A newline-separated list of actions to perform." },
+  testData: { type: Type.STRING, description: "Specific data values to use for the test. Can be 'N/A'." },
+  expectedResult: { type: Type.STRING, description: "The expected outcome after executing the test steps." },
+  priority: { type: Type.STRING, enum: ['High', 'Medium', 'Low'], description: "Priority of the test case." },
+  type: { type: Type.STRING, enum: ['Positive', 'Negative', 'Edge'], description: "Type of test case." },
+  domain: { type: Type.STRING, enum: ['Functional', 'UI/UX'], description: "The domain of the test case." },
+  suiteType: { type: Type.STRING, enum: ['Smoke', 'Sanity', 'Regression'], description: "The test suite this case belongs to." },
 };
 
 const responseSchema = {
   type: Type.ARRAY,
-  items: testCaseSchema,
+  items: {
+    type: Type.OBJECT,
+    properties: testCaseProperties,
+    required: Object.keys(testCaseProperties),
+  },
 };
 
 const fileToGenerativePart = async (file: File) => {
@@ -205,7 +206,7 @@ export const generateTestCases = async (prdText: string, figmaLink: string, imag
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: { parts },
+      contents: [{ parts }],
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
