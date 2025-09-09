@@ -1,10 +1,8 @@
-
-
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { TestCase, HistoryEntry, User, TestCaseDomain, TestSuiteType, TestCaseStatus, TestCaseType } from './types';
 import { generateTestCases } from './services/geminiService';
-import { SunIcon, MoonIcon, TrashIcon, SpinnerIcon, MenuIcon, LogOutIcon, SpreadsheetIcon, GoogleSheetIcon, XIcon } from './components/icons';
+import { SunIcon, MoonIcon, TrashIcon, SpinnerIcon, MenuIcon, LogOutIcon, SpreadsheetIcon, GoogleSheetIcon, XIcon, CheckIcon, CopyIcon } from './components/icons';
 import { InputArea } from './components/InputArea';
 import { TestCaseTable } from './components/TestCaseTable';
 import { Sidebar } from './components/Sidebar';
@@ -13,16 +11,28 @@ import { fileToBase64, base64ToFile } from './utils';
 
 type Theme = 'light' | 'dark';
 
+const loadingMessages = [
+  "Analyzing your requirements...",
+  "Consulting the design specs...",
+  "Crafting positive test cases...",
+  "Thinking about edge cases...",
+  "Generating negative scenarios...",
+  "Finalizing the test suite...",
+];
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [theme, setTheme] = useState<Theme>('light');
   const [prdText, setPrdText] = useState('');
   const [figmaLink, setFigmaLink] = useState('');
-  const [image, setImage] = useState<File | null>(null);
+  const [focusPrompt, setFocusPrompt] = useState('');
+  const [images, setImages] = useState<File[]>([]);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentLoadingMessage, setCurrentLoadingMessage] = useState(loadingMessages[0]);
   const [error, setError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState('');
+  const [copyStatus, setCopyStatus] = useState('');
   const [googleExportStatus, setGoogleExportStatus] = useState('');
   const [showSheetsCopyMessage, setShowSheetsCopyMessage] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -107,6 +117,22 @@ export default function App() {
     }
   }, [showSheetsCopyMessage]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isLoading) {
+      let i = 0;
+      setCurrentLoadingMessage(loadingMessages[0]);
+      interval = setInterval(() => {
+        i = (i + 1) % loadingMessages.length;
+        setCurrentLoadingMessage(loadingMessages[i]);
+      }, 2500);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isLoading]);
+
+
   const saveHistory = (updatedHistory: HistoryEntry[]) => {
       if (!currentUser) return;
       setHistory(updatedHistory);
@@ -124,7 +150,8 @@ export default function App() {
     // Clear state
     setPrdText('');
     setFigmaLink('');
-    setImage(null);
+    setFocusPrompt('');
+    setImages([]);
     setTestCases([]);
     setError(null);
     setHistory([]);
@@ -138,25 +165,29 @@ export default function App() {
   const handleGenerate = async () => {
     setIsLoading(true);
     setError(null);
+    setShowSheetsCopyMessage(false);
     try {
-      const results = await generateTestCases(prdText, figmaLink, image);
+      const results = await generateTestCases(prdText, figmaLink, images, focusPrompt);
       const resultsWithStatus = results.map(tc => ({
         ...tc,
         status: TestCaseStatus.Untested,
       }));
       setTestCases(resultsWithStatus);
 
-      let imageDa: HistoryEntry['image'] = undefined;
-      if (image) {
-          const base64 = await fileToBase64(image);
-          imageDa = { base64, name: image.name };
+      let imageDatas: HistoryEntry['images'] = [];
+      if (images.length > 0) {
+        imageDatas = await Promise.all(images.map(async (img) => {
+          const base64 = await fileToBase64(img);
+          return { base64, name: img.name };
+        }));
       }
       
       const newEntry: HistoryEntry = {
         id: Date.now(),
         prdText,
         figmaLink,
-        image: imageDa,
+        focusPrompt,
+        images: imageDatas.length > 0 ? imageDatas : undefined,
         testCases: resultsWithStatus,
       };
       saveHistory([newEntry, ...history]);
@@ -171,10 +202,13 @@ export default function App() {
   const handleRefresh = () => {
     setPrdText('');
     setFigmaLink('');
-    setImage(null);
+    setFocusPrompt('');
+    setImages([]);
     setTestCases([]);
     setError(null);
     setExportStatus('');
+    setCopyStatus('');
+    setShowSheetsCopyMessage(false);
   };
   
   const handleSelectHistory = (id: number) => {
@@ -182,6 +216,7 @@ export default function App() {
       if (entry) {
           setPrdText(entry.prdText);
           setFigmaLink(entry.figmaLink);
+          setFocusPrompt(entry.focusPrompt || '');
           const casesWithStatus = entry.testCases.map(tc => ({
               ...tc,
               status: tc.status || TestCaseStatus.Untested
@@ -189,12 +224,16 @@ export default function App() {
           setTestCases(casesWithStatus);
           setError(null);
           setExportStatus('');
+          setCopyStatus('');
+          setShowSheetsCopyMessage(false);
           
-          if (entry.image) {
-              const imageFile = base64ToFile(entry.image.base64, entry.image.name);
-              setImage(imageFile);
+          if (entry.images && entry.images.length > 0) {
+            const imageFiles = entry.images.map(imgData => 
+              base64ToFile(imgData.base64, imgData.name)
+            );
+            setImages(imageFiles);
           } else {
-              setImage(null);
+            setImages([]);
           }
       }
   };
@@ -275,6 +314,72 @@ export default function App() {
     }
   };
 
+  const formatTestCasesAsTsv = (): string => {
+    const headers = [
+        'TC_ID', 'Scenario', 'pre-condition', 'test steps', 'test data', 
+        'expected result', 'domain', 'priority', 'test suite type', 'type', 'status'
+    ];
+    
+    const dataRows = testCases.map(tc => [
+        tc.testCaseId,
+        tc.testScenario,
+        tc.preConditions,
+        tc.testSteps,
+        tc.testData,
+        tc.expectedResult,
+        tc.domain || TestCaseDomain.Functional,
+        tc.priority,
+        tc.suiteType || TestSuiteType.Regression,
+        tc.type || TestCaseType.Positive,
+        tc.status || TestCaseStatus.Untested,
+    ]);
+
+    const formatCell = (cellData: any): string => {
+        let cell = String(cellData || '');
+        // Replace tabs with spaces to avoid breaking TSV format
+        cell = cell.replace(/\t/g, ' ');
+        // If the cell contains a newline, or double quote, wrap it in double quotes
+        if (cell.search(/("|\n)/g) >= 0) {
+            // Escape existing double quotes by doubling them
+            cell = cell.replace(/"/g, '""');
+            cell = `"${cell}"`;
+        }
+        return cell;
+    };
+
+    return [
+        headers.join('\t'),
+        ...dataRows.map(row => row.map(formatCell).join('\t'))
+    ].join('\n');
+  };
+
+  const handleCopyAll = () => {
+    if (testCases.length === 0) {
+        setCopyStatus('No data.');
+        setTimeout(() => setCopyStatus(''), 2000);
+        return;
+    }
+
+    setCopyStatus('Copying...');
+
+    try {
+        const tsvContent = formatTestCasesAsTsv();
+        navigator.clipboard.writeText(tsvContent).then(() => {
+            setCopyStatus('Copied!');
+            setTimeout(() => setCopyStatus(''), 3000);
+        }, (err) => {
+            console.error('Failed to copy to clipboard', err);
+            setCopyStatus('Copy failed.');
+            setTimeout(() => setCopyStatus(''), 2000);
+        });
+
+    } catch (error) {
+        console.error("Error copying data:", error);
+        setCopyStatus('Copy failed.');
+        setTimeout(() => setCopyStatus(''), 2000);
+    }
+  };
+  
   const handleExportToGoogleSheets = () => {
     if (testCases.length === 0) {
         setGoogleExportStatus('No data.');
@@ -282,44 +387,10 @@ export default function App() {
         return;
     }
 
+    setGoogleExportStatus('Copying...');
+
     try {
-        const headers = [
-            'TC_ID', 'Scenario', 'pre-condition', 'test steps', 'test data', 
-            'expected result', 'domain', 'priority', 'test suite type', 'type', 'status'
-        ];
-        
-        const dataRows = testCases.map(tc => [
-            tc.testCaseId,
-            tc.testScenario,
-            tc.preConditions,
-            tc.testSteps,
-            tc.testData,
-            tc.expectedResult,
-            tc.domain || TestCaseDomain.Functional,
-            tc.priority,
-            tc.suiteType || TestSuiteType.Regression,
-            tc.type || TestCaseType.Positive,
-            tc.status || TestCaseStatus.Untested,
-        ]);
-
-        const formatCell = (cellData: string): string => {
-            let cell = String(cellData || '');
-            // Replace tabs with spaces to avoid breaking TSV format
-            cell = cell.replace(/\t/g, ' ');
-            // If the cell contains a newline, or double quote, wrap it in double quotes
-            if (cell.search(/("|\n)/g) >= 0) {
-                // Escape existing double quotes by doubling them
-                cell = cell.replace(/"/g, '""');
-                cell = `"${cell}"`;
-            }
-            return cell;
-        };
-
-        const tsvContent = [
-            headers.join('\t'),
-            ...dataRows.map(row => row.map(formatCell).join('\t'))
-        ].join('\n');
-        
+        const tsvContent = formatTestCasesAsTsv();
         navigator.clipboard.writeText(tsvContent).then(() => {
             setShowSheetsCopyMessage(true);
             setGoogleExportStatus('Copied!');
@@ -341,12 +412,33 @@ export default function App() {
   const handleClear = () => {
     if (window.confirm('Are you sure you want to clear all test cases? This cannot be undone.')) {
         setTestCases([]);
+        setShowSheetsCopyMessage(false);
     }
   };
   
   if (!currentUser) {
     return <Auth onLogin={handleLogin} />;
   }
+
+  const renderCopyButtonContent = () => {
+    if (copyStatus === 'Copied!') {
+      return <><CheckIcon className="h-4 w-4 mr-1" /> Copied!</>;
+    }
+    if (copyStatus) {
+        return copyStatus;
+    }
+    return <><CopyIcon className="h-4 w-4 mr-1" /> Copy All</>;
+  };
+
+  const renderGoogleSheetsButtonContent = () => {
+    if (googleExportStatus === 'Copied!') {
+      return <><CheckIcon className="h-4 w-4 mr-1" /> Copied!</>;
+    }
+    if (googleExportStatus) {
+        return googleExportStatus;
+    }
+    return <><GoogleSheetIcon className="h-4 w-4 mr-1" /> Open in Sheets</>;
+  };
 
 
   return (
@@ -364,35 +456,37 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-4">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 rounded-full hover:bg-bkg-light dark:hover:bg-gray-700/50 transition-colors"
+              className="p-2 rounded-full hover:bg-bkg-light dark:hover:bg-border-dark transition-colors"
               aria-label="Open history menu"
             >
               <MenuIcon className="h-6 w-6" />
             </button>
-            <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary-start to-primary-end bg-clip-text text-transparent">
+            <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-primary to-primary-light bg-clip-text text-transparent">
               QA Assistant
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
             <span className="text-sm text-text-light-secondary dark:text-text-dark-secondary hidden sm:block truncate max-w-[150px]">{currentUser.email}</span>
-            <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-bkg-light dark:hover:bg-gray-700/50 transition-colors">
+            <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-bkg-light dark:hover:bg-border-dark transition-colors">
               {theme === 'light' ? <MoonIcon className="h-6 w-6" /> : <SunIcon className="h-6 w-6" />}
             </button>
-            <button onClick={handleLogout} className="p-2 rounded-full hover:bg-bkg-light dark:hover:bg-gray-700/50 transition-colors" aria-label="Logout">
+            <button onClick={handleLogout} className="p-2 rounded-full hover:bg-bkg-light dark:hover:bg-border-dark transition-colors" aria-label="Logout">
               <LogOutIcon className="h-6 w-6" />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
         <InputArea
           prdText={prdText}
           setPrdText={setPrdText}
           figmaLink={figmaLink}
           setFigmaLink={setFigmaLink}
-          image={image}
-          setImage={setImage}
+          focusPrompt={focusPrompt}
+          setFocusPrompt={setFocusPrompt}
+          images={images}
+          setImages={setImages}
           onGenerate={handleGenerate}
           isLoading={isLoading}
           hasTestCases={testCases.length > 0}
@@ -400,7 +494,7 @@ export default function App() {
         />
 
         {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-danger px-4 py-3 rounded-lg relative" role="alert">
+            <div className="bg-danger/10 border border-danger/30 text-danger px-4 py-3 rounded-lg relative" role="alert">
                 <strong className="font-bold">Error: </strong>
                 <span className="block sm:inline">{error}</span>
             </div>
@@ -408,22 +502,25 @@ export default function App() {
 
         {isLoading && (
             <div className="bg-content-light dark:bg-content-dark p-6 rounded-xl shadow-lg border border-border-light dark:border-border-dark flex flex-col items-center justify-center space-y-4">
-                <SpinnerIcon className="h-12 w-12 text-primary-start animate-spin" />
-                <p className="text-lg font-semibold">Generating test cases...</p>
+                <SpinnerIcon className="h-12 w-12 text-primary animate-spin" />
+                <p className="text-lg font-semibold">{currentLoadingMessage}</p>
                 <p className="text-sm text-text-light-secondary dark:text-text-dark-secondary">This might take a moment. Please wait.</p>
             </div>
         )}
 
         {!isLoading && testCases.length > 0 && (
-          <div className="bg-content-light dark:bg-content-dark p-6 rounded-xl shadow-lg border border-border-light dark:border-border-dark">
+          <div className="bg-content-light dark:bg-content-dark p-4 sm:p-6 rounded-2xl shadow-xl border border-border-light dark:border-border-dark">
             <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
               <h2 className="text-xl font-bold">Generated Test Cases</h2>
               <div className="flex items-center gap-2 flex-wrap justify-center">
-                <button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-600 border border-green-600 rounded-md hover:bg-green-600/10 transition-colors">
+                <button onClick={handleDownloadExcel} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-success border border-success rounded-md hover:bg-success/10 transition-colors">
                   <SpreadsheetIcon className="h-4 w-4" /> {exportStatus || 'Download Excel'}
                 </button>
-                <button onClick={handleExportToGoogleSheets} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 border border-green-700 rounded-md hover:bg-green-700/10 transition-colors">
-                  <GoogleSheetIcon className="h-4 w-4" /> {googleExportStatus || 'Open in Sheets'}
+                <button onClick={handleCopyAll} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-secondary border border-secondary rounded-md hover:bg-secondary/10 transition-colors">
+                  {renderCopyButtonContent()}
+                </button>
+                <button onClick={handleExportToGoogleSheets} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary border border-primary rounded-md hover:bg-primary/10 transition-colors">
+                  {renderGoogleSheetsButtonContent()}
                 </button>
                 <button onClick={handleClear} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-danger border border-danger rounded-md hover:bg-danger/10 transition-colors">
                     <TrashIcon className="h-4 w-4" /> Clear All
